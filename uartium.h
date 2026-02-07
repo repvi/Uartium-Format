@@ -13,6 +13,7 @@ typedef struct uartium_config_t
     uartium_write_fn_t write_fn; // used for printing log messages, if NULL, defaults to printf
 } uartium_config_t;
 
+/* DO NOT MODIFY */
 typedef enum uartium_event_type_t
 {
     UARTIUM_EVENT_INFO = 0,
