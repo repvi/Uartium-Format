@@ -24,13 +24,13 @@ int main(void)
         UARTIUM_FIELD_STRING(sample_t, s),
     };
 
-    st = uartium_buffer_struct_fields(&s1, fields, 4);
+    st = uartium_buffer_struct_fields(&s1, fields, 4, UARTIUM_EVENT_INFO, "Sample 1");
     if (st != UARTIUM_STATUS_OK && st != UARTIUM_STATUS_BUFFER_OVERFLOW) {
         fprintf(stderr, "buffer_fields failed: %d\n", (int)st);
         return 1;
     }
 
-    st = uartium_buffer_struct_fields(&s2, fields, 4);
+    st = uartium_buffer_struct_fields(&s2, fields, 4, UARTIUM_EVENT_DEBUG, "Sample 2");
     if (st != UARTIUM_STATUS_OK && st != UARTIUM_STATUS_BUFFER_OVERFLOW) {
         fprintf(stderr, "buffer_fields failed: %d\n", (int)st);
         return 1;

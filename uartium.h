@@ -5,12 +5,14 @@
 #include <stdint.h>
 
 typedef void(*uartium_write_fn_t)(const char* buffer, size_t len);
+typedef uint32_t (*uartium_time_fn_t)(void);
 
 typedef struct uartium_config_t
 {
     uint8_t *buffer;
     size_t buffer_size;
     uartium_write_fn_t write_fn; // used for printing log messages, if NULL, defaults to printf
+    uartium_time_fn_t time_fn; // used for timestamping messages, if NULL, timestamps are omitted
 } uartium_config_t;
 
 /* DO NOT MODIFY */
@@ -29,6 +31,14 @@ typedef enum uartium_status_t
     UARTIUM_STATUS_BUFFER_OVERFLOW
 } uartium_status_t;
 
+/*
+ * Wire format for struct fields:  name:type=value
+ *   type tags:  u = unsigned int,  i = signed int,  f = float,  s = string
+ *   Strings are always enclosed in double quotes on the wire:
+ *       temperature:u=25  offset:i=-3  ratio:f=1.230  label:s="hello"
+ *   Fields within a single entry are separated by a space.
+ *   Entries are separated by a newline ('\n').
+ */
 typedef enum uartium_field_type_t
 { 
     UARTIUM_F_UINT, 
@@ -73,11 +83,15 @@ uartium_status_t uartium_flush();
 
 uartium_status_t uartium_buffer_struct_fields(const void* data,
                            const uartium_field_t* const fields,
-                           size_t field_count);
+                           size_t field_count,
+                           uartium_event_type_t event_type,
+                           const char *msg);
 
 uartium_status_t uartium_log_struct_fields(const void* data,
                         const uartium_field_t* const fields,
-                        size_t field_count);
+                        size_t field_count,
+                        uartium_event_type_t event_type,
+                        const char *msg);
 
 uartium_status_t uartium_get_buffer(const uint8_t** buffer, size_t* buffer_size);
 

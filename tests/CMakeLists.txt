@@ -49,3 +49,11 @@ target_include_directories(visual_messages_all PRIVATE "${CMAKE_SOURCE_DIR}")
 target_link_libraries(visual_messages_all PRIVATE uartium)
 
 add_test(NAME uartium_visual_all COMMAND visual_messages_all)
+
+# Demo of new features (timestamps, event types, messages)
+add_executable(demo_new_features
+    demo_new_features.c
+)
+
+target_include_directories(demo_new_features PRIVATE "${CMAKE_SOURCE_DIR}")
+target_link_libraries(demo_new_features PRIVATE uartium)

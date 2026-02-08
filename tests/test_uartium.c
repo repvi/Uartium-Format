@@ -29,13 +29,13 @@ static int test_format_and_flush(void)
         UARTIUM_FIELD_STRING(test_t, s),
     };
 
-    ASSERT(uartium_buffer_struct_fields(&t, fields, sizeof(fields)/sizeof(fields[0])) == UARTIUM_STATUS_OK, "buffer_struct_fields failed");
+    ASSERT(uartium_buffer_struct_fields(&t, fields, sizeof(fields)/sizeof(fields[0]), UARTIUM_EVENT_INFO, NULL) == UARTIUM_STATUS_OK, "buffer_struct_fields failed");
 
     const uint8_t *bufptr = NULL;
     size_t buflen = 0;
     ASSERT(uartium_get_buffer(&bufptr, &buflen) == UARTIUM_STATUS_OK, "get_buffer failed");
     const char *actual = (const char*)(bufptr); // library writes starting at buffer[0]
-    const char expected[] = "a=123 b=-5 c=1.235 s=hello";
+    const char expected[] = "[INFO] a:u=123 b:i=-5 c:f=1.235 s:s=\"hello\"";
 
     if (strcmp(actual, expected) != 0) {
         fprintf(stderr, "[format] Actual:   '%s'\n", actual);
@@ -72,14 +72,14 @@ static int test_accumulate_entries(void)
         UARTIUM_FIELD_STRING(test_t, s),
     };
 
-    ASSERT(uartium_buffer_struct_fields(&t1, fields, 4) == UARTIUM_STATUS_OK, "buffer_struct_fields t1 failed");
-    ASSERT(uartium_buffer_struct_fields(&t2, fields, 4) == UARTIUM_STATUS_OK, "buffer_struct_fields t2 failed");
+    ASSERT(uartium_buffer_struct_fields(&t1, fields, 4, UARTIUM_EVENT_INFO, NULL) == UARTIUM_STATUS_OK, "buffer_struct_fields t1 failed");
+    ASSERT(uartium_buffer_struct_fields(&t2, fields, 4, UARTIUM_EVENT_INFO, NULL) == UARTIUM_STATUS_OK, "buffer_struct_fields t2 failed");
 
     const uint8_t *bufptr = NULL;
     size_t buflen = 0;
     ASSERT(uartium_get_buffer(&bufptr, &buflen) == UARTIUM_STATUS_OK, "get_buffer failed");
     const char *actual = (const char*)(bufptr);
-    const char expected[] = "a=123 b=-5 c=1.235 s=hello\na=200 b=3 c=2.000 s=world";
+    const char expected[] = "[INFO] a:u=123 b:i=-5 c:f=1.235 s:s=\"hello\"\n[INFO] a:u=200 b:i=3 c:f=2.000 s:s=\"world\"";
 
     if (strcmp(actual, expected) != 0) {
         fprintf(stderr, "[accum] Actual:   '%s'\n", actual);
@@ -112,7 +112,7 @@ static int test_overflow_behavior(void)
     const uartium_field_t fields[] = { UARTIUM_FIELD_STRING(big_t, s) };
 
     /* This should not crash; after failure the buffer should be empty */
-    uartium_status_t st = uartium_buffer_struct_fields(&b, fields, 1);
+    uartium_status_t st = uartium_buffer_struct_fields(&b, fields, 1, UARTIUM_EVENT_INFO, NULL);
     ASSERT(st == UARTIUM_STATUS_OK || st == UARTIUM_STATUS_BUFFER_OVERFLOW, "buffer_struct_fields unexpected result");
     const uint8_t *bufptr = NULL;
     size_t buflen = 0;

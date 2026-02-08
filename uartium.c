@@ -13,15 +13,12 @@
 /* Internal context and helper functions */
 #define UARTIUM_MESSAGE_TYPE_UNKNOWN "[UNKNOWN]"
 
-#define UARTIUM_MESSAGE_TYPE_DATA    "[DATA]"
-#define UARTIUM_MESSAGE_DATA_ID      100
-
 typedef struct {
     uint8_t *buffer;
     size_t buffer_size;
     size_t buffer_index;
     uartium_write_fn_t write_fn;
-
+    uartium_time_fn_t time_fn;
     bool initialized;
 } uartium_ctx_t;
 
@@ -41,10 +38,6 @@ static const char *uartium_get_internal_header(uint32_t id)
         default:
             break;
     }
-
-    if (id == UARTIUM_MESSAGE_DATA_ID) {
-        return UARTIUM_MESSAGE_TYPE_DATA;
-    }
     
     return UARTIUM_MESSAGE_TYPE_UNKNOWN;
 }
@@ -63,6 +56,7 @@ uartium_status_t uartium_init(const uartium_config_t* const config)
     s_uartium_ctx.buffer_index   = 0;
     s_uartium_ctx.buffer[0]      = '\0'; // Initialize the buffer with a null terminator
     s_uartium_ctx.write_fn       = config->write_fn;
+    s_uartium_ctx.time_fn        = config->time_fn;
     s_uartium_ctx.initialized    = true;
     printf("Uartium initialized!\n");
     return UARTIUM_STATUS_OK;
@@ -79,6 +73,7 @@ uartium_status_t uartium_deinit()
     s_uartium_ctx.buffer_size     = 0;
     s_uartium_ctx.buffer_index    = 0;
     s_uartium_ctx.write_fn        = NULL;
+    s_uartium_ctx.time_fn         = NULL;
     printf("Uartium deinitialized!\n");
     return UARTIUM_STATUS_OK;
 }
@@ -141,11 +136,25 @@ static uartium_status_t uartium_msg_internal(uartium_ctx_t *const ctx, uint32_t 
         return status;
     }
 
+    // Add event type and message
     if (has_text(msg)) {
         status = uartium_append_string(ctx, "%s %s", type_str, msg, &ctx->buffer_index);
     }
     else {
         status = uartium_append_string(ctx, "%s%s", type_str, " ", &ctx->buffer_index);
+    }
+
+    // Add timestamp if time_fn is provided
+    if (ctx->time_fn) {
+        uint32_t timestamp = ctx->time_fn();
+        uint8_t *offset_ptr = ctx->buffer + ctx->buffer_index;
+        size_t buffer_count = ctx->buffer_size - ctx->buffer_index;
+        int n = snprintf((char*)offset_ptr, buffer_count, ":t=%u ", timestamp);
+        if (n < 0 || (size_t)n >= buffer_count) {
+            ctx->buffer[ctx->buffer_index] = '\0';
+            return UARTIUM_STATUS_BUFFER_OVERFLOW;
+        }
+        ctx->buffer_index += n;
     }
 
     return status;
@@ -293,15 +302,28 @@ static uartium_status_t uartium_log_struct_fields_helper(
                         uartium_ctx_t *const ctx,
                         const void* data,
                         const uartium_field_t* const fields,
-                        size_t field_count)
+                        size_t field_count,
+                        uartium_event_type_t event_type,
+                        const char *msg)
 {
     size_t i                 = 0;
     size_t retries           = 0;
     size_t iter              = 0;
     
-    new_line_if_needed(ctx);
+    // Don't call new_line_if_needed here - uartium_msg_internal will do it
     iter = ctx->buffer_index;
-    uartium_msg_internal(ctx, UARTIUM_MESSAGE_DATA_ID, ""); // Add the [DATA] header for struct field entries
+    uartium_msg_internal(ctx, event_type, msg);
+    iter = ctx->buffer_index;  // Update iter to point after the message header
+    
+    // Add separator between message and fields if message was provided
+    if (msg && msg[0] != '\0') {
+        uartium_status_t sep_status = uartium_append_separator(ctx, &iter);
+        if (sep_status == UARTIUM_STATUS_BUFFER_OVERFLOW) {
+            ctx->buffer[ctx->buffer_index] = '\0';
+            return UARTIUM_STATUS_BUFFER_OVERFLOW;
+        }
+    }
+    
     while (i < field_count) {
         const uartium_field_t* const f = &fields[i];
         const uint8_t* base            = (const uint8_t*)data + f->offset;
@@ -309,19 +331,19 @@ static uartium_status_t uartium_log_struct_fields_helper(
 
         switch (f->type) {
             case UARTIUM_F_FLOAT:
-                status = uartium_append_float(ctx, "%s=%.3f", f->name, *(float*)base, &iter);
+                status = uartium_append_float(ctx, "%s:f=%.3f", f->name, *(float*)base, &iter);
                 break;
 
             case UARTIUM_F_UINT:
-                status = uartium_append_uint(ctx, "%s=%u", f->name, *(uint32_t*)base, &iter);
+                status = uartium_append_uint(ctx, "%s:u=%u", f->name, *(uint32_t*)base, &iter);
                 break;
 
             case UARTIUM_F_INT:
-                status = uartium_append_int(ctx, "%s=%d", f->name, *(int*)base, &iter);
+                status = uartium_append_int(ctx, "%s:i=%d", f->name, *(int*)base, &iter);
                 break;
 
             case UARTIUM_F_STRING:
-                status = uartium_append_string(ctx, "%s=%s", f->name, *(char**)base, &iter);
+                status = uartium_append_string(ctx, "%s:s=\"%s\"", f->name, *(char**)base, &iter);
                 break;
 
             default:
@@ -356,26 +378,42 @@ static uartium_status_t uartium_log_struct_fields_helper(
 
 uartium_status_t uartium_buffer_struct_fields(const void* data,
                            const uartium_field_t* const fields,
-                           size_t field_count) 
+                           size_t field_count,
+                           uartium_event_type_t event_type,
+                           const char *msg) 
 {
     uartium_ctx_t *const ctx = &s_uartium_ctx;
-    if (!ctx->initialized || data == NULL || fields == NULL || field_count == 0) {
+    if (!ctx->initialized || !data || !fields || field_count == 0 || !valid_event_type(event_type)) {
         return UARTIUM_STATUS_ERROR;
     }
 
-    return uartium_log_struct_fields_helper(ctx, data, fields, field_count);
+    if (!msg) {
+        msg = "";
+    } else if (!is_valid_message(msg)) {
+        return UARTIUM_STATUS_ERROR;
+    }
+
+    return uartium_log_struct_fields_helper(ctx, data, fields, field_count, event_type, msg);
 }
 
 uartium_status_t uartium_log_struct_fields(const void* data,
                         const uartium_field_t* const fields,
-                        size_t field_count)
+                        size_t field_count,
+                        uartium_event_type_t event_type,
+                        const char *msg)
 {
     uartium_ctx_t *const ctx = &s_uartium_ctx;
-    if (!ctx->initialized || data == NULL || fields == NULL || field_count == 0) {
+    if (!ctx->initialized || !data || !fields || field_count == 0 || !valid_event_type(event_type)) {
         return UARTIUM_STATUS_ERROR;
     }
 
-    uartium_status_t status = uartium_log_struct_fields_helper(ctx, data, fields, field_count);
+    if (!msg) {
+        msg = "";
+    } else if (!is_valid_message(msg)) {
+        return UARTIUM_STATUS_ERROR;
+    }
+
+    uartium_status_t status = uartium_log_struct_fields_helper(ctx, data, fields, field_count, event_type, msg);
     if (status == UARTIUM_STATUS_OK) {
         uartium_flush_internal(ctx);
     }
@@ -390,7 +428,7 @@ uartium_status_t uartium_get_buffer(const uint8_t** buffer, size_t* buffer_size)
         return UARTIUM_STATUS_ERROR;
     }
 
-    *buffer                     = ctx->buffer;
-    *buffer_size                = ctx->buffer_index;
+    *buffer         = ctx->buffer;
+    *buffer_size    = ctx->buffer_index;
     return UARTIUM_STATUS_OK;
 }

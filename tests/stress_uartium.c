@@ -66,7 +66,7 @@ int main(void)
         /* Build formatted entry string matching uartium formatting (no separators):
            a=%ub=%dc=%.3fs=%s */
         char entry[512];
-        snprintf(entry, sizeof(entry), "a=%u b=%d c=%.3f s=%s", d.a, d.b, d.c, d.s);
+        snprintf(entry, sizeof(entry), "[INFO] a:u=%u b:i=%d c:f=%.3f s:s=\"%s\"", d.a, d.b, d.c, d.s);
 
         static char expected[16384];
         if (expected[0] == '\0') {
@@ -78,7 +78,7 @@ int main(void)
             strncat(expected, entry, sizeof(expected)-strlen(expected)-1);
         }
 
-        st = uartium_buffer_struct_fields(&d, fields, 4);
+        st = uartium_buffer_struct_fields(&d, fields, 4, UARTIUM_EVENT_INFO, NULL);
         if (st != UARTIUM_STATUS_OK && st != UARTIUM_STATUS_BUFFER_OVERFLOW) {
             fprintf(stderr, "uartium_buffer_struct_fields unexpected status at iter %u: %d\n", it, (int)st);
             return 1;
